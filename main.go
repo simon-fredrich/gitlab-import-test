@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,20 +27,31 @@ func main() {
 	token := os.Getenv("GITLAB_API_KEY")
 	url := os.Getenv("GITLAB_URL")
 
-	project := getProject(token, url, *projectName, *projectPathWithNamespace)
+	project, err := getProject(token, url, *projectName, *projectPathWithNamespace)
+
+	if err != nil {
+		log.Fatal("Error getting the project details: ", err)
+	}
 
 	// Print project details
 	fmt.Printf("ID: %v, Name: %v, PathWithNamespace: %v", project.ID, project.Name, project.PathWithNamespace)
-
 }
 
-func getProject(token string, url string, projectName string, projectPathWithNamespace string) Project {
+func getProject(token string, url string, projectName string, projectPathWithNamespace string) (Project, error) {
 	if token == "" {
 		log.Fatal("GITLAB_API_KEY is not set.")
 	}
 
 	if url == "" {
 		log.Fatal("GITLAB_URL is not set.")
+	}
+
+	if projectName == "" {
+		log.Fatal("projectName not provided.")
+	}
+
+	if projectPathWithNamespace == "" {
+		log.Fatal("projectPathWithNamespace not provided.")
 	}
 
 	// Create new search utilizing the name of the project
@@ -74,9 +86,9 @@ func getProject(token string, url string, projectName string, projectPathWithNam
 	// Find project correspondint to `Name` and `PathWithNamespace`
 	for _, project := range projects {
 		if (project.Name == projectName) && (project.PathWithNamespace == projectPathWithNamespace) {
-			return project
+			return project, nil
 		}
 	}
 
-	return Project{}
+	return Project{}, errors.New("Project not found")
 }
