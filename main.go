@@ -8,8 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-
-	"github.com/joho/godotenv"
 )
 
 type Project struct {
@@ -25,8 +23,8 @@ func main() {
 	projectName := flag.String("name", "client-go", "Name of the project to identify project.")
 	flag.Parse()
 
-	token := getEnvVar("GITLAB_API_KEY")
-	url := getEnvVar("GITLAB_URL")
+	token := os.Getenv("GITLAB_API_KEY")
+	url := os.Getenv("GITLAB_URL")
 
 	project := getProject(token, url, *projectName, *projectPathWithNamespace)
 
@@ -81,13 +79,4 @@ func getProject(token string, url string, projectName string, projectPathWithNam
 	}
 
 	return Project{}
-}
-
-func getEnvVar(key string) string {
-	// Find .env file
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file: %s", err)
-	}
-	return os.Getenv(key)
 }
