@@ -1,26 +1,18 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 
 	// "log"
-	"net/http"
+
 	"os"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
-
-type Project struct {
-	ID                int    `json:"id"`
-	Name              string `json:"name"`
-	Path              string `json:"path"`
-	PathWithNamespace string `json:"path_with_namespace"`
-}
 
 func main() {
 
@@ -28,75 +20,71 @@ func main() {
 
 	log.Print("Hello from zerolog.")
 
-	projectPathWithNamespace := flag.String("path", "gitlab-org/api/client-go", "Path with namespace to identify project.")
-	projectName := flag.String("name", "client-go", "Name of the project to identify project.")
+	// projectPathWithNamespace := flag.String("projectPathWithNamespace", "gitlab-org/api/client-go", "Path with namespace to identify project.")
+	projectPath := flag.String("path", "", "Provide the path of desired project.")
+	projectName := flag.String("name", "", "Name of the project to identify desired project.")
+	parentId := flag.Int("parentId", 0, "Provide the parentId of desired project.")
 	flag.Parse()
 
+	// get environment variables and check if they are initilized
 	token := os.Getenv("GITLAB_API_KEY")
-	url := os.Getenv("GITLAB_URL")
-
-	project, err := getProject(token, url, *projectName, *projectPathWithNamespace)
-
-	if err != nil {
-		log.Error().Err(err).Msg("Error getting the project details: ")
-	}
-
-	// Print project details
-	fmt.Printf("ID: %v, Name: %v, PathWithNamespace: %v", project.ID, project.Name, project.PathWithNamespace)
-}
-
-func getProject(token string, url string, projectName string, projectPathWithNamespace string) (Project, error) {
 	if token == "" {
 		log.Error().Msg("GITLAB_API_KEY is not set.")
 	}
 
+	url := os.Getenv("GITLAB_URL")
 	if url == "" {
 		log.Error().Msg("GITLAB_URL is not set.")
 	}
 
-	if projectName == "" {
-		log.Print("projectName not provided.")
-	}
-
-	if projectPathWithNamespace == "" {
-		log.Error().Msg("projectPathWithNamespace not provided.")
-	}
-
-	// Create new search utilizing the name of the project
-	req, err := http.NewRequest("GET", url+"/api/v4/search?scope=projects&search="+projectPathWithNamespace, nil)
+	// Create a new instance of the gitlab api "client-go"
+	git, err := gitlab.NewClient(token, gitlab.WithBaseURL(url+"/api/v4"))
 	if err != nil {
-		log.Error().Msg("Error creating requests: ")
+		log.Error().Err(err).Msg("Something went wrong creating a new api client.")
 	}
 
-	// Providing private token
-	req.Header.Set("PRIVATE-TOKEN", token)
-
-	// Creating a http client and performing request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	projects, err := getProjectsByParentId(git, *parentId, *projectPath, *projectName)
 	if err != nil {
-		log.Error().Err(err).Msg("Error making request:")
-	}
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Error().Err(err).Msg("Error reading response body:")
+		log.Error().Err(err)
 	}
 
-	// Unmarshal response body
-	var projects []Project
-	if err := json.Unmarshal(body, &projects); err != nil {
-		log.Error().Err(err).Msg("Error unmarshaling body: ")
-	}
-
-	// Find project correspondint to `Name` and `PathWithNamespace`
 	for _, project := range projects {
-		if (project.Name == projectName) && (project.PathWithNamespace == projectPathWithNamespace) {
-			return project, nil
+		fmt.Println(project.Name)
+	}
+}
+
+func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
+	// Get subgroups to later display their projects
+	subgroups, _, err := client.Groups.ListSubGroups(parentId, &gitlab.ListSubGroupsOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, subgroup := range subgroups {
+		fmt.Println(subgroup.Name)
+
+		// search projects of subgroup by path or name
+		if path != "" {
+			log.Print("Trying path to find project ...")
+			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(path)})
+			if err != nil {
+				return nil, err
+			}
+
+			// utilize name parameter if path based approach did not work
+			if len(projects) == 0 && name != "" {
+				log.Print("No Project found using path. Trying name now...")
+				projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(name)})
+				if err != nil {
+					return nil, err
+				}
+
+				return projects, nil
+			} else {
+				return projects, nil
+			}
 		}
 	}
 
-	return Project{}, errors.New("Project not found")
+	return nil, errors.New("No Projects have been found.")
 }
