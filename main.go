@@ -63,9 +63,7 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 	}
 
 	for _, subgroup := range subgroups {
-		fmt.Println(subgroup.Name)
-
-		// search projects of subgroup by path or name
+		// search projects of subgroup by path
 		if path != "" {
 			log.Print("Trying path to find project ...")
 			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(path)})
@@ -73,20 +71,31 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 				return nil, err
 			}
 
-			// utilize name parameter if path based approach did not work
-			if len(projects) == 0 && name != "" {
-				log.Print("No Project found using path. Trying name now...")
-				projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(name)})
-				if err != nil {
-					return nil, err
-				}
-
-				return projects, nil
-			} else {
+			// return if at least one project was found
+			if len(projects) > 0 {
+				log.Print("path was successful")
 				return projects, nil
 			}
 		}
+
+		// search projects of subgroup by name
+		if name != "" {
+			log.Print("path was unsufficient or empty, trying name...")
+			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(name)})
+			if err != nil {
+				return nil, err
+			}
+
+			// return if at least one project was found
+			if len(projects) > 0 {
+				log.Print("name was successful")
+				return projects, nil
+			}
+		}
+
+		// both path and name where not provided
+		log.Error().Msg("path and name where both unsufficient or empty.")
 	}
 
-	return nil, errors.New("no Projects have been found")
+	return nil, errors.New("no subgroups or projects have been found")
 }
