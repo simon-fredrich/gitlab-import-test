@@ -6,9 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+
+	// "log"
 	"net/http"
 	"os"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type Project struct {
@@ -20,6 +24,10 @@ type Project struct {
 
 func main() {
 
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+
+	log.Print("Hello from zerolog.")
+
 	projectPathWithNamespace := flag.String("path", "gitlab-org/api/client-go", "Path with namespace to identify project.")
 	projectName := flag.String("name", "client-go", "Name of the project to identify project.")
 	flag.Parse()
@@ -30,7 +38,7 @@ func main() {
 	project, err := getProject(token, url, *projectName, *projectPathWithNamespace)
 
 	if err != nil {
-		log.Fatal("Error getting the project details: ", err)
+		log.Error().Err(err).Msg("Error getting the project details: ")
 	}
 
 	// Print project details
@@ -39,25 +47,25 @@ func main() {
 
 func getProject(token string, url string, projectName string, projectPathWithNamespace string) (Project, error) {
 	if token == "" {
-		log.Fatal("GITLAB_API_KEY is not set.")
+		log.Error().Msg("GITLAB_API_KEY is not set.")
 	}
 
 	if url == "" {
-		log.Fatal("GITLAB_URL is not set.")
+		log.Error().Msg("GITLAB_URL is not set.")
 	}
 
 	if projectName == "" {
-		log.Fatal("projectName not provided.")
+		log.Print("projectName not provided.")
 	}
 
 	if projectPathWithNamespace == "" {
-		log.Fatal("projectPathWithNamespace not provided.")
+		log.Error().Msg("projectPathWithNamespace not provided.")
 	}
 
 	// Create new search utilizing the name of the project
 	req, err := http.NewRequest("GET", url+"/api/v4/search?scope=projects&search="+projectPathWithNamespace, nil)
 	if err != nil {
-		log.Fatal("Error creating requests: ", err)
+		log.Error().Msg("Error creating requests: ")
 	}
 
 	// Providing private token
@@ -67,20 +75,20 @@ func getProject(token string, url string, projectName string, projectPathWithNam
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal("Error making request:", err)
+		log.Error().Err(err).Msg("Error making request:")
 	}
 	defer resp.Body.Close()
 
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal("Error reading response body:", err)
+		log.Error().Err(err).Msg("Error reading response body:")
 	}
 
 	// Unmarshal response body
 	var projects []Project
 	if err := json.Unmarshal(body, &projects); err != nil {
-		log.Fatal("Error unmarshaling body: ", err)
+		log.Error().Err(err).Msg("Error unmarshaling body: ")
 	}
 
 	// Find project correspondint to `Name` and `PathWithNamespace`
