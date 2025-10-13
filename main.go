@@ -48,8 +48,10 @@ func main() {
 		log.Error().Err(err)
 	}
 
+	// iterate over projects which satisfy conditions
 	for _, project := range projects {
-		fmt.Println(project.Name)
+		// print project details
+		fmt.Printf("ID: %v, Name: %v, Path: %v", project.ID, project.Name, project.Path)
 	}
 }
 
@@ -86,5 +88,5 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 		}
 	}
 
-	return nil, errors.New("No Projects have been found.")
+	return nil, errors.New("no Projects have been found")
 }
