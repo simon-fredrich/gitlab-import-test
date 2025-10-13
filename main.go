@@ -51,7 +51,7 @@ func main() {
 	// iterate over projects which satisfy conditions
 	for _, project := range projects {
 		// print project details
-		fmt.Printf("ID: %v, Name: %v, Path: %v", project.ID, project.Name, project.Path)
+		fmt.Printf("ID: %v, Name: %v, Path: %v\n", project.ID, project.Name, project.Path)
 	}
 }
 
