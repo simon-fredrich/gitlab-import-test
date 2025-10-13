@@ -18,8 +18,6 @@ func main() {
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	log.Print("Hello from zerolog.")
-
 	// projectPathWithNamespace := flag.String("projectPathWithNamespace", "gitlab-org/api/client-go", "Path with namespace to identify project.")
 	projectPath := flag.String("path", "", "Provide the path of desired project.")
 	projectName := flag.String("name", "", "Name of the project to identify desired project.")
