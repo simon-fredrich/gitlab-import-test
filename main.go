@@ -43,7 +43,7 @@ func main() {
 
 	projects, err := getProjectsByParentId(git, *parentId, *projectPath, *projectName)
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("did not get projects by parentId")
 	}
 
 	// iterate over projects which satisfy conditions
@@ -55,15 +55,16 @@ func main() {
 
 func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
 	// Get subgroups to later display their projects
-	subgroups, _, err := client.Groups.ListSubGroups(parentId, &gitlab.ListSubGroupsOptions{})
+	subgroups, r, err := client.Groups.ListSubGroups(parentId, &gitlab.ListSubGroupsOptions{})
 	if err != nil {
+		log.Error().Err(err).Msgf("gitlab resp: %+v", r)
 		return nil, err
 	}
 
 	for _, subgroup := range subgroups {
 		// search projects of subgroup by path
 		if path != "" {
-			log.Print("Trying path to find project ...")
+			log.Print("Trying path to find project...")
 			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(path)})
 			if err != nil {
 				return nil, err
@@ -78,7 +79,7 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 
 		// search projects of subgroup by name
 		if name != "" {
-			log.Print("path was unsufficient or empty, trying name...")
+			log.Print("path was unsufficient or empty, trying name to find project...")
 			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(name)})
 			if err != nil {
 				return nil, err
