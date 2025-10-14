@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 
@@ -54,21 +53,62 @@ func main() {
 }
 
 func getSubGroups(client *gitlab.Client, groupId int) ([]*gitlab.Group, error) {
-	subgroups, r, err := client.Groups.ListSubGroups(groupId, &gitlab.ListSubGroupsOptions{})
-	if err != nil {
-		log.Error().Err(err).Msgf("gitlab resp: %+v", r)
-		return nil, err
+	subgroupsTotal := []*gitlab.Group{}
+	page := 1
+
+	for {
+		opt := &gitlab.ListSubGroupsOptions{
+			AllAvailable: gitlab.Ptr(true),
+			ListOptions: gitlab.ListOptions{
+				PerPage: 10,
+				Page:    page,
+			},
+		}
+
+		subgroups, resp, err := client.Groups.ListSubGroups(groupId, opt)
+		if err != nil {
+			log.Error().Err(err).Msgf("gitlab resp: %+v", resp)
+			return nil, err
+		}
+		subgroupsTotal = append(subgroupsTotal, subgroups...)
+
+		if resp.CurrentPage >= resp.TotalPages {
+			break
+		}
+		page++
 	}
-	return subgroups, nil
+
+	return subgroupsTotal, nil
 }
 
 func getProjects(client *gitlab.Client, groupId int, searchTerm string) ([]*gitlab.Project, error) {
-	projects, r, err := client.Groups.ListGroupProjects(groupId, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(searchTerm)})
-	if err != nil {
-		log.Error().Err(err).Msgf("gitlab resp: %+v", r)
-		return nil, err
+	projectsTotal := []*gitlab.Project{}
+	page := 1
+
+	for {
+		opt := &gitlab.ListGroupProjectsOptions{
+			Search: gitlab.Ptr(searchTerm),
+			ListOptions: gitlab.ListOptions{
+				PerPage: 10,
+				Page:    page,
+			},
+		}
+
+		projects, resp, err := client.Groups.ListGroupProjects(groupId, opt)
+		if err != nil {
+			log.Error().Err(err).Msgf("gitlab resp: %+v", resp)
+			return nil, err
+		}
+
+		projectsTotal = append(projectsTotal, projects...)
+
+		if resp.CurrentPage >= resp.TotalPages {
+			break
+		}
+		page++
 	}
-	return projects, nil
+
+	return projectsTotal, nil
 }
 
 func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
@@ -80,7 +120,8 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 	} else if name != "" {
 		searchTerm = name
 	} else {
-		return nil, errors.New("no path or name provided")
+		log.Print("no path or name provided")
+		searchTerm = ""
 	}
 
 	// search the parent group for projects and append to total if found
@@ -98,6 +139,7 @@ func getProjectsByParentId(client *gitlab.Client, parentId int, path string, nam
 	}
 	// return projects if no subgroup is found
 	if len(subgroups) == 0 {
+		log.Print("no subgroups found")
 		return projectsTotal, nil
 	}
 
