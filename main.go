@@ -53,48 +53,64 @@ func main() {
 	}
 }
 
-func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
-	// Get subgroups to later display their projects
-	subgroups, r, err := client.Groups.ListSubGroups(parentId, &gitlab.ListSubGroupsOptions{})
+func getSubGroups(client *gitlab.Client, groupId int) ([]*gitlab.Group, error) {
+	subgroups, r, err := client.Groups.ListSubGroups(groupId, &gitlab.ListSubGroupsOptions{})
 	if err != nil {
 		log.Error().Err(err).Msgf("gitlab resp: %+v", r)
 		return nil, err
 	}
+	return subgroups, nil
+}
 
-	for _, subgroup := range subgroups {
-		// search projects of subgroup by path
-		if path != "" {
-			log.Print("Trying path to find project...")
-			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(path)})
-			if err != nil {
-				return nil, err
-			}
+func getProjects(client *gitlab.Client, groupId int, searchTerm string) ([]*gitlab.Project, error) {
+	projects, r, err := client.Groups.ListGroupProjects(groupId, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(searchTerm)})
+	if err != nil {
+		log.Error().Err(err).Msgf("gitlab resp: %+v", r)
+		return nil, err
+	}
+	return projects, nil
+}
 
-			// return if at least one project was found
-			if len(projects) > 0 {
-				log.Print("path was successful")
-				return projects, nil
-			}
-		}
+func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
+	projectsTotal := []*gitlab.Project{}
+	var searchTerm string
 
-		// search projects of subgroup by name
-		if name != "" {
-			log.Print("path was unsufficient or empty, trying name to find project...")
-			projects, _, err := client.Groups.ListGroupProjects(subgroup.ID, &gitlab.ListGroupProjectsOptions{Search: gitlab.Ptr(name)})
-			if err != nil {
-				return nil, err
-			}
-
-			// return if at least one project was found
-			if len(projects) > 0 {
-				log.Print("name was successful")
-				return projects, nil
-			}
-		}
-
-		// both path and name where not provided
-		log.Error().Msg("path and name where both unsufficient or empty.")
+	if path != "" {
+		searchTerm = path
+	} else if name != "" {
+		searchTerm = name
+	} else {
+		return nil, errors.New("no path or name provided")
 	}
 
-	return nil, errors.New("no subgroups or projects have been found")
+	// search the parent group for projects and append to total if found
+	projectsFromParent, err := getProjects(client, parentId, searchTerm)
+	if err != nil {
+		log.Error().Err(err).Msg("did not find projects inside parent")
+	}
+	if len(projectsFromParent) > 0 {
+		projectsTotal = append(projectsTotal, projectsFromParent...)
+	}
+
+	subgroups, err := getSubGroups(client, parentId)
+	if err != nil {
+		log.Error().Err(err).Msg("did not find subgroups inside parent")
+	}
+	// return projects if no subgroup is found
+	if len(subgroups) == 0 {
+		return projectsTotal, nil
+	}
+
+	// search inside subgroups
+	for _, subgroup := range subgroups {
+		projects, err := getProjects(client, subgroup.ID, searchTerm)
+		if err != nil {
+			log.Error().Err(err).Msg("did not find projects inside subgroup")
+		}
+		if len(projects) > 0 {
+			projectsTotal = append(projectsTotal, projects...)
+		}
+	}
+
+	return projectsTotal, nil
 }
