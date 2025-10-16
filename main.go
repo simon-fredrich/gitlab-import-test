@@ -17,11 +17,20 @@ func main() {
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	// projectPathWithNamespace := flag.String("projectPathWithNamespace", "gitlab-org/api/client-go", "Path with namespace to identify project.")
-	projectPath := flag.String("path", "", "Provide the path of desired project.")
-	projectName := flag.String("name", "", "Name of the project to identify desired project.")
+	path := flag.String("path", "", "Provide the path of desired project.")
+	namespaceId := flag.Int("namespaceId", 0, "namespaceId of desired project.")
 	parentId := flag.Int("parentId", 0, "Provide the parentId of desired project.")
 	flag.Parse()
+
+	// check flag values
+	if *path == "" {
+		log.Fatal().Msg("please specify a path to compare against")
+	}
+	if *namespaceId == 0 && *parentId == 0 {
+		log.Fatal().Msg("neither namespaceId nor parentId")
+	} else if *namespaceId != 0 && *parentId != 0 {
+		log.Fatal().Msg("specify namespaceId OR parentId")
+	}
 
 	// get environment variables and check if they are initilized
 	token := os.Getenv("GITLAB_API_KEY")
@@ -40,22 +49,84 @@ func main() {
 		log.Error().Err(err).Msg("Something went wrong creating a new api client.")
 	}
 
-	projects, err := getProjectsByParentId(git, *parentId, *projectPath, *projectName)
-	if err != nil {
-		log.Error().Err(err).Msg("did not get projects by parentId")
+	// try to get project with namespaceId and path
+	if *namespaceId != 0 {
+		projectId, err := getProject(git, *namespaceId, *path)
+		if err != nil || projectId == 0 {
+			log.Fatal().Err(err).Msg("can't get projectId")
+		}
+		project, resp, err := git.Projects.GetProject(projectId, &gitlab.GetProjectOptions{})
+		if err != nil {
+			log.Error().Err(err).Msgf("can't get project, gitlab response: %+v", resp)
+		}
+
+		fmt.Println("Found a project:")
+		fmt.Println("--------------")
+		fmt.Printf("ID: %v,\nGroupID: %v,\nName: %v, Path: %v,\nPathWithNamespace: %v\n", project.ID, project.Namespace.ID, project.Name, project.Path, project.PathWithNamespace)
+	} else {
+		fmt.Println("namespaceId not specified, trying to find group now...")
 	}
 
-	// iterate over projects which satisfy conditions
-	for _, project := range projects {
-		// print project details
-		fmt.Printf("ID: %v, Name: %v, Path: %v\n", project.ID, project.Name, project.Path)
+	// try to get group with parentId and path
+	if *parentId != 0 {
+		groupId, err := getGroup(git, *parentId, *path)
+		if err != nil || groupId == 0 {
+			log.Fatal().Err(err).Msg("can't get groupId")
+		}
+		group, resp, err := git.Groups.GetGroup(groupId, &gitlab.GetGroupOptions{})
+		if err != nil {
+			log.Error().Err(err).Msgf("can't get group, gitlab response: %+v", resp)
+		}
+
+		fmt.Println("Found a group:")
+		fmt.Println("--------------")
+		fmt.Printf("ID: %v,\nParentGroupID: %v,\nName: %v,\nPath: %v,\nNamespace: %v\n", group.ID, group.ParentID, group.Name, group.Path, group.FullPath)
+	} else {
+		fmt.Println("parentId not specified, please specify namespaceId/parentId to find project/group")
 	}
 }
 
+// getProject returns the `projectId` for a given `namespaceId` and `path`
+func getProject(client *gitlab.Client, namespaceId int, path string) (int, error) {
+	// namespaceId is the ID of the group containing the desired project
+	parentId := namespaceId
+
+	// find project based on path
+	projects, err := getProjects(client, parentId, "")
+	if err != nil {
+		log.Error().Err(err).Msgf("can't get projects")
+		return 0, err
+	}
+	for _, project := range projects {
+		if project.Path == path {
+			return project.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("there is no project with matching path in namespace with ID %+v", namespaceId)
+}
+
+// getGroup returns the `groupId` for a given `parentId` and `path`
+func getGroup(client *gitlab.Client, parentId int, path string) (int, error) {
+	// find group based on path
+	groups, err := getSubGroups(client, parentId)
+	if err != nil {
+		log.Error().Err(err).Msgf("can't get subgroups")
+		return 0, err
+	}
+	for _, group := range groups {
+		if group.Path == path {
+			return group.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("there is no project with matching path in parent group with id: %+v", parentId)
+}
+
+// getSubGroups returns all groups of a given parent group
 func getSubGroups(client *gitlab.Client, groupId int) ([]*gitlab.Group, error) {
 	subgroupsTotal := []*gitlab.Group{}
 	page := 1
 
+	// iterate over all pages to retrieve all possible subgroups
 	for {
 		opt := &gitlab.ListSubGroupsOptions{
 			AllAvailable: gitlab.Ptr(true),
@@ -81,10 +152,12 @@ func getSubGroups(client *gitlab.Client, groupId int) ([]*gitlab.Group, error) {
 	return subgroupsTotal, nil
 }
 
+// getProjects returns all projects of a given parent group and has
 func getProjects(client *gitlab.Client, groupId int, searchTerm string) ([]*gitlab.Project, error) {
 	projectsTotal := []*gitlab.Project{}
 	page := 1
 
+	// iterate over all pages to retrieve all possible projects in group with the given groupId
 	for {
 		opt := &gitlab.ListGroupProjectsOptions{
 			Search: gitlab.Ptr(searchTerm),
@@ -111,6 +184,7 @@ func getProjects(client *gitlab.Client, groupId int, searchTerm string) ([]*gitl
 	return projectsTotal, nil
 }
 
+// function might not be needed anymore
 func getProjectsByParentId(client *gitlab.Client, parentId int, path string, name string) ([]*gitlab.Project, error) {
 	projectsTotal := []*gitlab.Project{}
 	var searchTerm string
