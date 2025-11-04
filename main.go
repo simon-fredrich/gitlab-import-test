@@ -16,6 +16,7 @@ import (
 func main() {
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	path := flag.String("path", "", "Provide the path of desired project.")
 	namespaceId := flag.Int("namespaceId", 0, "namespaceId of desired project.")
